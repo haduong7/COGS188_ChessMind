@@ -109,10 +109,3 @@ move_uci = env.action_to_move(move_index)
 - `move_to_action(move_uci: str) -> int` - Converts a UCI move to an action index.
 - `action_to_move(action_index: int) -> str` - Converts an action index back to a UCI move.
 
----
-
-## **Conclusion**
-
-This **ChessEnvironment** is designed to be a flexible and efficient tool for implementing Minimax, MCTS, and PPO-based chess agents. It provides a clean API for managing chess game states, evaluating board positions, and integrating RL techniques.
-
-For any questions or contributions, feel free to reach out!
