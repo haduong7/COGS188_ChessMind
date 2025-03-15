@@ -1,0 +1,5 @@
+Agent,Wins,Draws,Losses,Points,Win Rate
+Hybrid,13,45,2,35.5,21.67%
+Neural,9,50,1,34.0,15.00%
+Minimax,0,60,0,30.0,0.00%
+MCTS,0,41,19,20.5,0.00%
