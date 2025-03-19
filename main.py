@@ -199,6 +199,17 @@ def main():
             if efficiency_data:
                 nodes_per_second = [stats.get('nodes_per_second', 0) for stats in efficiency_data]
                 time_per_move = [stats.get('time_taken', 0) for stats in efficiency_data]
+                
+                # Add these print statements:
+                print("\nPerformance Metrics:")
+                print("-" * 50)
+                print("| Agent Name | Nodes/Second | Time/Move (s) |")
+                print("-" * 50)
+                for i, name in enumerate(agent_names):
+                    if i < len(nodes_per_second):
+                        print(f"| {name:<10} | {nodes_per_second[i]:>12.2f} | {time_per_move[i]:>12.4f} |")
+                print("-" * 50)
+                
                 metrics_viz.plot_computational_efficiency(agent_names, nodes_per_second, time_per_move)
 
 if __name__ == "__main__":

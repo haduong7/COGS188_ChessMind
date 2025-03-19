@@ -57,6 +57,10 @@ class MetricsVisualizer:
     
     def plot_computational_efficiency(self, agent_names, nodes_per_second, time_per_move):
         """Plot the computational efficiency of different agents"""
+        if len(agent_names) != len(nodes_per_second):
+            print(f"Warning: Mismatch between agent names ({len(agent_names)}) and metrics ({len(nodes_per_second)})")
+            # Use only the agents we have metrics for
+            agent_names = agent_names[:len(nodes_per_second)]
         plt.figure(figsize=(14, 6))
         
         # Plot nodes per second
