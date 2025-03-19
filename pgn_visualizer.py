@@ -252,7 +252,7 @@ def visualize_interesting_games(pgn_file, output_dir="./visualized_games"):
 
 if __name__ == "__main__":
     # Path to your tournament PGN file
-    pgn_file = "./results/games/tournament_20250314_172357.pgn"
+    pgn_file = "games/I4IaYeKM.pgn"
     
     # Visualize interesting games
     visualize_interesting_games(pgn_file)

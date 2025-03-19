@@ -8,7 +8,7 @@ from chess_env import ChessEnvironment
 from neural_agent import NeuralAgent
 
 class HybridNode:
-    def __init__(self, env, neural_agent, parent=None, move=None):
+    def __init__(self, env, neural_agent, parent=None, move=None, prior=None):
         self.env = env
         self.neural_agent = neural_agent
         self.parent = parent
@@ -18,14 +18,19 @@ class HybridNode:
         self.visits = 0
         self.untried_moves = list(env.board.legal_moves)
         
-        # Get policy and value from neural network
-        if neural_agent:
+        if prior is not None:
+            # Use the provided prior (a scalar) and skip NN evaluation
+            self.policy = prior  
+            # You might set a default value for the value if desired.
+            self.value = 0.5  
+        elif neural_agent:
             try:
                 state = env.get_state()
-                state_tensor = torch.FloatTensor(state).unsqueeze(0)
+                state_tensor = torch.FloatTensor(state).unsqueeze(0).to(neural_agent.device)
                 with torch.no_grad():
-                    self.policy, value = neural_agent.model(state_tensor)
-                self.policy = self.policy.squeeze().numpy()
+                    policy, value = neural_agent.model(state_tensor)
+                # Store the full policy vector for the node
+                self.policy = policy.squeeze().cpu().numpy()
                 self.value = value.item()
             except Exception as e:
                 print(f"Error getting neural network prediction: {e}")
@@ -40,32 +45,50 @@ class HybridNode:
         if not self.children:
             return None
         
-        # Use a simpler UCB1 formula without the policy prior
-        def ucb_score(child):
-            exploitation = child.wins / child.visits if child.visits > 0 else 0
-            exploration = c_param * math.sqrt(math.log(self.visits) / max(child.visits, 1))
-            return exploitation + exploration
+        def puct_score(child):
+            """PUCT formula: balances exploration & exploitation"""
+            q_value = child.wins / (child.visits + 1)  # Q(s, a)
+            prior = child.policy if child.policy is not None else 1 / len(self.children)  # Prior from NN
+            ucb_term = c_param * prior * (math.sqrt(self.visits) / (1 + child.visits))
+            return q_value + ucb_term
+
+        return max(self.children, key=puct_score)
+
+    def expand(self, batch_nodes=None):
+        """Expand all untried moves, using the parent's policy vector to set priors."""
+        if batch_nodes is None:
+            batch_nodes = []
         
-        try:
-            return max(self.children, key=ucb_score)
-        except Exception as e:
-            # Fallback to most visited child if any error occurs
-            print(f"Error in select_child: {e}, falling back to most visited")
-            if self.children:
-                return max(self.children, key=lambda c: c.visits)
-            return None
-    
-    def expand(self):
-        """Expand by adding a new child node"""
-        if not self.untried_moves:
-            return None
+        # Get parent's action space. Assume it returns a dict {index: move_uci}
+        action_space = self.env.get_action_space()
+        
+        # Expand each untried move
+        while self.untried_moves:
+            move = self.untried_moves.pop()
+            # Find the index in the parent's action space that corresponds to this move.
+            move_index = None
+            for idx, move_uci in action_space.items():
+                if move_uci == move.uci():
+                    move_index = idx
+                    break
+            # If not found, use a uniform fallback.
+            if move_index is None:
+                move_index = 0
             
-        move = self.untried_moves.pop()
-        new_env = self.env.clone()
-        new_env.board.push(move)
-        child_node = HybridNode(new_env, self.neural_agent, parent=self, move=move)
-        self.children.append(child_node)
-        return child_node
+            # Extract the prior probability for this move from parent's policy vector.
+            if self.policy is not None and isinstance(self.policy, np.ndarray):
+                prior = float(self.policy[move_index])
+            else:
+                prior = 1.0 / len(action_space)
+            
+            new_env = self.env.clone()
+            new_env.board.push(move)
+            # Create the child node, passing the extracted prior.
+            child_node = HybridNode(new_env, self.neural_agent, parent=self, move=move, prior=prior)
+            self.children.append(child_node)
+            batch_nodes.append(child_node)
+        
+        return batch_nodes
     
     def update(self, result):
         """Update node statistics"""
@@ -117,7 +140,7 @@ class HybridAgent:
                 
                 # Select with timeout check
                 search_start = time.time()
-                while node.untried_moves == [] and node.children != [] and time.time() < max_time:
+                while node.untried_moves == [] and node.children != [] and time.time() < max_time and len(batch_nodes)<16: # batch size 16
                     node = node.select_child()
                     if node is None:
                         break
@@ -131,23 +154,49 @@ class HybridAgent:
                 # Expansion (with timeout check)
                 if node is not None and node.untried_moves and time.time() < max_time:
                     try:
-                        node = node.expand()
-                        self.nodes_explored += 1
-                        if node is not None:
-                            search_path.append(node)
+                        batch_nodes = node.expand([])  
+                        self.nodes_explored += len(batch_nodes)  
+                
+                        # Batch process all expanded nodes
+                        if batch_nodes:
+                            batch_fens = [n.env.board.fen() for n in batch_nodes]
+                            batch_policies, batch_values = self.neural_agent.evaluate_batch(batch_fens)
+                            
+                            for i, child in enumerate(batch_nodes):
+                                p = batch_policies[i]
+                                if isinstance(p, np.ndarray):
+                                    if p.size == 1:
+                                        p = float(p.item())
+                                    else:
+                                        p = float(np.mean(p)) # take mean value of NN vector of probs
+                                else:
+                                    p = float(p)
+                                child.policy = p
+                        
+                                v = batch_values[i]
+                                if isinstance(v, np.ndarray):
+                                    if v.size == 1:
+                                        v = float(v.item())
+                                    else:
+                                        v = float(np.mean(v))
+                                else:
+                                    v = float(v)
+                                child.value = v
+                                
+                        search_path.extend(batch_nodes) 
                     except Exception as e:
                         print(f"Error in expansion: {e}")
-                        break  # Stop this iteration if expansion fails
-                
-                # Evaluation - use neural net or default to 0.5
+                        break
+
+
                 result = 0.5  # Default to draw
+                
                 if node is not None:
                     if hasattr(node, 'value') and node.value is not None:
                         result = (node.value + 1) / 2  # Convert from [-1,1] to [0,1]
                     else:
-                        # Simple rollout without actual simulation
                         result = 0.5
-                
+                        
                 # Backpropagation (with error handling)
                 for n in search_path:
                     if n is not None:  # Safety check

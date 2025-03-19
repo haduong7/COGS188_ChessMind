@@ -19,7 +19,10 @@ def train_neural_agent(args):
     
     # Create model and trainer
     model = ChessNN()
-    trainer = PPOTrainer(model=model, lr=args.learning_rate, gamma=args.gamma)
+    trainer = PPOTrainer(model=model, 
+                         lr=args.learning_rate, 
+                         gamma=args.gamma, 
+                         evaluation_interval=args.evaluation_interval)
     
     # Train model
     losses = trainer.train(
@@ -62,6 +65,7 @@ def run_tournament(args, model=None):
     # Set up tournament
     agents = [minimax_agent, mcts_agent, neural_agent, hybrid_agent]
     names = ["Minimax", "MCTS", "Neural", "Hybrid"]
+
     
     tournament = Tournament(agents, names)
     
@@ -108,6 +112,8 @@ def main():
                         help="Learning rate for neural network training")
     parser.add_argument("--gamma", type=float, default=0.99,
                         help="Discount factor for rewards")
+    parser.add_argument("--evaluation_interval", type=int, default=5,
+                        help="Number of iterations between Elo evaluations")
     
     # Tournament arguments
     parser.add_argument("--model_path", type=str, default=None,

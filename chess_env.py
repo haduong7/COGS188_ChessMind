@@ -51,6 +51,7 @@ class ChessEnvironment:
             fen (str): A valid FEN string representing a board state.
         """
         self.board.set_fen(fen)
+        return self
         
         
     def get_reward(self):

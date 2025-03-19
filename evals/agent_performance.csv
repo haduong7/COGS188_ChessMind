@@ -1,0 +1,5 @@
+Agent,Nodes/Second,Time/Move (s),Memory Usage
+Minimax,5275,0.23,Medium
+MCTS,1830,0.48,Low
+Neural,7920,0.12,High
+Hybrid,3280,0.31,High

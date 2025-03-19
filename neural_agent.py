@@ -8,6 +8,8 @@ from chess_env import ChessEnvironment
 class ChessNN(nn.Module):
     def __init__(self):
         super(ChessNN, self).__init__()
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         # Convolutional backbone
         self.conv1 = nn.Conv2d(14, 64, kernel_size=3, padding=1)
@@ -22,8 +24,12 @@ class ChessNN(nn.Module):
         self.value_conv = nn.Conv2d(256, 64, kernel_size=1)
         self.value_fc1 = nn.Linear(64 * 8 * 8, 256)
         self.value_fc2 = nn.Linear(256, 1)
+
+        self.to(self.device)
     
     def forward(self, x):
+        x = x.to(self.device)
+        
         # Process input through convolutional layers
         x = x.permute(0, 3, 1, 2)  # Change from (B,8,8,14) to (B,14,8,8)
         x = F.relu(self.conv1(x))
@@ -55,23 +61,45 @@ class NeuralAgent:
         
         self.model.eval()
         self.env = ChessEnvironment()
+
+    def evaluate_batch(self, board_fens):
+        """Evaluates multiple board positions at once but also works for single inputs."""
+        
+        # Check if the input is a single FEN string, convert to a list if necessary
+        single_input = False
+        if isinstance(board_fens, str): 
+            board_fens = [board_fens]
+            single_input = True 
+
+
+        batch_tensors = [torch.FloatTensor(self.env.set_fen(fen).get_state()) for fen in board_fens]
+        batch_tensor = torch.stack(batch_tensors).to(self.device)  # Stack into a batch
+
+        # Run a single batch forward pass through the neural network
+        with torch.no_grad():
+            batch_policies, batch_values = self.model(batch_tensor)  # Single forward pass for all positions
+
+        batch_policies = batch_policies.cpu().numpy()
+        batch_values = batch_values.cpu().numpy()
+
+        # If it was a single input, return only the first result
+        if single_input:
+            return batch_policies[0], batch_values[0]
+
+        return batch_policies, batch_values
     
     def select_move(self, board_fen, temperature=1.0):
         """Select a move using the neural network policy"""
-        self.env.set_fen(board_fen)
-        state = self.env.get_state()
-        state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
         
-        with torch.no_grad():
-            policy, _ = self.model(state_tensor)
-            policy = policy.squeeze(0)
+        policy, _ = self.evaluate_batch(board_fen)  
+        policy = torch.tensor(policy, device="cpu")
         
         # Get legal moves
         action_space = self.env.get_action_space()
         legal_moves = list(action_space.values())
         
         # Filter policy for legal moves only
-        legal_policy = torch.zeros(len(action_space))
+        legal_policy = torch.zeros(len(action_space), device="cpu")
         for i, move_uci in action_space.items():
             legal_policy[i] = policy[i]
         
