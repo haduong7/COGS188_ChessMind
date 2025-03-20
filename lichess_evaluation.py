@@ -7,7 +7,7 @@ from hybrid_agent import HybridAgent
 from chess_env import ChessEnvironment
 
 # Initialize the Lichess API client
-session = berserk.TokenSession("lip_gBPis4tPs4mdhSoeMxvX")
+session = berserk.TokenSession(API_TOKEN)
 client = berserk.Client(session)
 
 # Initialize chess environment
